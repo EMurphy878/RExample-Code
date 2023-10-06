@@ -1,0 +1,402 @@
+#————————————————————————#
+# Statistician/Data Scientist Example Code                   
+# Author: Erin Murphy                                                    
+# Updated: 10/5/2023                          
+#————————————————————————#
+
+#----------------#
+# Load Packages  
+#----------------#
+#List of packages 
+pks <- c("readxl", "foreign","sas7bdat", "readstata13" ,"psych","tidyverse", "car","mice", "mirt", "survey")
+lapply(pks, require, character.only = T)
+
+#---------------------------------------#
+# Data Manipulation/Editing/Management  
+#---------------------------------------#
+  
+#Read In Data
+setwd("~/Documents/AIR_Example")
+dat_csv <-read.csv("data.csv")
+dat_excel <- read_excel("~/Documents/AIR_Example/data.xls")
+dat_spss <- read.spss("data.sav", use.value.labels =T, to.data.frame = T)
+data_sas <- read.sas7bdat("data.sas7bdat", debug = F)
+dat_stata1 <- read.dta("data.dta") 
+dat_stata2 <- read.dta13("data.dta")
+
+#Create Data 
+x <- c(1,1,2,3,4)
+y <- c(2,2,5,6,7)
+z <- c(3,3,8,9,10)
+dat <- as.data.frame(cbind(x,y,z))
+
+#Check Data Structure
+str(dat)
+head(dat)
+tail(dat)
+
+#Sort/Order
+sort(dat$x)
+order(dat$x)
+
+#Subset Data (By Index and Subset Function)
+dat_sub <- dat[dat$x == 1,]
+dat_sub2 <-subset(dat, x==1)
+
+#Assign Value as NA 
+dat$x[dat$x == 3] <- NA
+dat$y <- na_if(dat$y, 2)
+
+#ID/Drop Missing
+which(!complete.cases(dat)) #Any Row with NA
+which(is.na(dat$x)) #Variable Specific NA 
+dat_nomiss <- na.omit(dat)
+
+#ID/Drop Duplicates 
+dat[duplicated(dat),] #Number of dupes and values of vars 
+which(duplicated(dat)) #Which rows are dupes 
+dat_nodupe <- dat[!duplicated(dat),] #Remove duplicate rows 
+
+#Merge Data By Unique ID
+dat$ID <- c(1,2,3,4,5)
+ID <- c(1,2,3,4)
+b <- rnorm(4)
+dat2 <- as.data.frame(cbind(ID,b))
+##Left Join
+merge(dat,dat2, by.x = "ID", by.y = "ID", all.y = T)
+##Right Join
+merge(dat,dat2, by.x = "ID", by.y = "ID", all.x = T)
+##Inner (Natural) Join 
+merge(dat,dat2, by.x = "ID", by.y = "ID")
+
+#Create (Random) Variables
+dat$a <- rnorm(5)
+dat$sex <- rbinom(5,1, .5)
+
+#Change Variable Type/Attributes 
+dat$ID <- factor(dat$ID)
+dat$sex <- factor(dat$sex, labels = c("male","female"))
+dat$a <- as.character(dat$a)
+
+#Impute Missing Values
+##Mean Substitution
+dat.mean <- complete(mice(dat, m=1, meth="mean"))
+##Stochastic Regression
+dat.reg <- complete(mice(dat, m=1, meth=c("norm")))
+##Multiple Imputation 
+dat.imp <- mice(dat, m=10, method="norm")
+
+#Write Functions 
+get.intercept = function (y,x){ 
+  fit = lm(y~x) 
+  intercept = coef(fit)[1]
+  return(intercept)}
+get.intercept(y,x)
+
+#Loops 
+A = matrix(rnorm(200,0,1),20, 10)
+B = matrix(rnorm(200,-2,1),20,10)
+my.intercepts = rep(0,10) #create blank holding space
+for (j in 1:10){my.intercepts[j] = get.intercept(A[,j], B[,j])}
+my.intercepts;
+
+#Apply function
+apply(A,1,mean) #means of rows of matrix A
+apply(A,2,mean) #means of columns of matrix A
+##S apply - same as loop but faster (scalar apply)
+out = sapply(1:10, function(jj) get.intercept(A[jj], B[jj]))
+##L apply (list apply) - returns list 
+out = lapply(1:10, function(jj) get.intercept(A[jj], B[jj]))
+
+
+#---------------#
+# Data Analysis 
+#---------------#
+
+#Summary Statistics
+summary(dat$x) #Univariate
+summary(dat)  #Multivariate 
+describe(dat)
+
+#Summary Statistics by Group 
+ID <- c(1,1,2,3,4)
+y <- c(2,4,5,6,7)
+z <- c(3,9,8,9,10)
+dat <- as.data.frame(cbind(ID,y,z))
+dat$ID <- factor(dat$ID)
+str(dat)
+##Aggregate
+aggregate(x = dat[,-1], by = list(ID), FUN = mean)
+##Describe By 
+describeBy(dat[,-1], dat$ID)
+##Dplyr 
+group_by(dat, ID) %>% summarise(count = n(),mean.y = mean(y),sd.y = sd(y))
+
+#Summary Statistics - Survey Data (w Design Information)
+data_surv <- read.csv("data_surv.csv")
+des1 <- svydesign(ids =~Cluster, strata = ~Stratum, data = data_surv, weights=~weight, nest = TRUE)
+summary(des1)
+svymean(~data_surv$x, des1, deff="replace", na.rm = TRUE)
+
+##Estimate Sampling Variances with Replicate Samples  
+##Jackknife 
+desjkn <- as.svrepdesign(des1, type="JKn")
+##Balanced Repeated Replication
+desbrr <- as.svrepdesign(des1, type = "BRR")
+##Bootstrap 
+desboot <- as.svrepdesign(des1, type="bootstrap")
+
+ 
+#---------------------------------------------#
+# Practical Example  - Data processing/API Calls                           
+# Pull multiple tables from ICPSR Archives    
+# Store tables in single folder as CSVs       
+#---------------------------------------------#
+
+#Install latest version of icpsrdata package from Github 
+if (!require(remotes)) install.packages("remotes")
+remotes::install_github("fsolt/icpsrdata")
+
+#Install latest version of icpsrdata package from Github 
+if (!require(remotes)) install.packages("remotes")
+remotes::install_github("fsolt/icpsrdata")
+
+#Load icpsrdata and other packages as needed
+library(icpsrdata)
+library(here)
+library(readxl)
+library(tidyverse)
+
+#Set download directories
+pardir <- "~/Documents/AIR_Example"
+tmpdir <- tempdir()
+
+#Write icpsr login info to .RProfile
+#options("icpsr_email" = "", "icpsr_password" = "")
+
+
+#Table names from icspr
+tblnames_par <- c(31325, 31326, 31327, 31328, 31329, 31330, 31331, 31332, 34380, 34381, 34382, 34718, 35257,35629, 36320, 36619, 37441,37471,38058)
+yrs <- seq(2000,2018,1)
+
+#Combine into single table 
+combo <- tibble(yrs, tblnames_prob)
+
+#Write generalized datpull function for tables
+datpull_par <- function (i){
+  
+  #Pull row i from combo table and assign columns to current table and yr vars 
+  comboi <- combo %>% slice(i)
+  current_tbl <- pull(comboi, tblnames_par) 
+  current_yr <- pull(comboi, yrs)
+  
+  #Download current table into temp directory
+  icpsr_download(file_id = current_tbl,download_dir = tmpdir) 
+  
+  #Create name of temp TSV file in temp directory and store file name 
+  tmpfilename <- paste0(tmpdir,"\\ICPSR_",current_tbl,"\\DS0001\\",current_tbl,"-0001-Data.tsv")
+  storefilename <-paste0(probdir,"\\Parole_",current_yr,".csv") 
+  
+  #Read in temp TSV file 
+  file_1 <- tmpfilename %>% read_delim()
+  
+  #Write out csv file 
+  file_1 %>% write_csv(file=storefilename)}
+
+#Run function for all rows of combo (2x with parole/probation updates)
+1:nrow(combo) %>% map_df(datpull_par)
+
+#Delete the temporary directory
+unlink(tmpdir, recursive = T)
+
+#---------------------------------------------#
+#  Machine Learning: CART                     #
+#---------------------------------------------#
+#Load required packages 
+install.packages("tree")
+install.packages("randomForest")
+install.packages("gbm")
+
+library(tree)
+library(randomForest)
+library(gbm)
+
+# load the data
+library(EDMS657Data)
+head(hitters)
+
+## Regression Trees: Use Major League Baseball Data for the demonstration of regression trees
+#Goal: Predict log-transformed salary.
+
+# log transform the salary
+hitters$lgSalary <- log(hitters$Salary)    
+
+# fit the regression tree to a subset of the data
+tree.hitters <- tree(lgSalary~., hitters[is.na(hitters$Salary)==F, c("lgSalary","Years","Hits")])
+summary(tree.hitters)
+
+# plot the regression tree
+plot(tree.hitters)
+text(tree.hitters, pretty=0)
+
+# prune the tree. Only keep 3 terminal nodes
+prune.hitters <- prune.tree(tree.hitters, best=3)
+summary(prune.hitters)
+plot(prune.hitters)
+text(prune.hitters)
+
+
+## Cost complexity pruning of regression trees
+hitters2 <- hitters[is.na(hitters$Salary)==F, c("lgSalary","Years","Hits","HmRun","RBI","PutOuts","Walks","Runs")]
+set.seed(123)
+train <- sample(1:nrow(hitters2), 132, replace=F)
+
+tree2.hitters <- tree(lgSalary~., hitters2[train,])
+summary(tree2.hitters)
+plot(tree2.hitters)
+text(tree2.hitters, pretty=0)
+
+# pruning the tree via cross-validation
+cv.tree2 <- cv.tree(tree2.hitters, K=6)
+plot(cv.tree2$size, cv.tree2$dev, type="b")
+
+prune.hitters2 <- prune.tree(tree2.hitters, best=4)
+plot(prune.hitters2)
+text(prune.hitters2)
+
+
+
+
+## Classification Trees 
+#Goal: Predict binary outcome of heart disease for 303 patients who presented with chest pain based on 13 predictors 
+#including Age, Sex, Chol (a cholesterol measurement), and other heart and lung function measurements such as Thal (Thallium stress test) and ChestPain symptoms.
+
+head(heart)
+
+set.seed(124)
+train <- sample(1:nrow(heart), 150)
+tree.heart <- tree(AHD~., heart[train,])
+plot(tree.heart)
+text(tree.heart, pretty=0)
+
+summary(tree.heart)
+
+cv.heart <- cv.tree(tree.heart)
+plot(cv.heart$size, cv.heart$dev, type="b")
+
+cv.heart <- cv.tree(tree.heart, method = "misclass")
+plot(cv.heart$size, cv.heart$dev, type = "b")
+
+prune.heart <- prune.tree(tree.heart, best=4)
+plot(prune.heart)
+text(prune.heart, pretty=0)
+
+
+## Bagging
+set.seed(234)
+train <- sample(1:nrow(hitters2), 132, replace=F)
+
+(bg.hitters <- randomForest(lgSalary~., data=hitters2, subset=train, mtry=7, importance=T))
+#bg.hitters
+
+
+## Random Forest
+(rf.hitters <- randomForest(lgSalary~., data=hitters2, subset=train, mtry=3, importance=T))
+imp.hitters <- importance(rf.hitters)
+imp.hitters <- imp.hitters[order(imp.hitters[,2], decreasing=T),]
+barplot(imp.hitters[,2], names.arg=rownames(imp.hitters), main="Variable importance", col="darkred", horiz=TRUE, las=1)
+
+
+### Boosting
+set.seed(234)
+train <- sample(1:nrow(hitters2), 132, replace=F)
+
+boost.hitters <- gbm(lgSalary~., data=hitters2[train,], distribution="gaussian", n.trees=10000, interaction.depth = 4, shrinkage=0.01, verbose=F)
+summary(boost.hitters)
+
+ntrees <- seq(1,1000,10)
+predmat <- predict(boost.hitters, newdata=hitters2[-train,], n.trees=ntrees)
+boost.err <- apply((predmat-hitters2[-train, "lgSalary"])^2, 2, mean)
+plot(ntrees, boost.err, pch=19, col="darkblue", ylab="MSE", xlab="number of iterations")
+
+
+
+#---------------------------------------------------------------------------#
+#  Machine Learning: Dimensionality Reduction using PCA                     
+#---------------------------------------------------------------------------#
+
+#Extract # of dimensions from example data and assess "fit"
+data <- matrix(c(1, 0.724,
+                 0.724,  1),byrow=T,nrow=2)
+
+# using the psych package 
+(pcaout <- principal(data,nfactors=2))
+
+# eigen values (also shown as SS loadings)
+pcaout$values
+
+pcaout$Vaccounted
+# scree plot
+VSS.scree(data)
+
+
+# PC score coeffcients (building PCs)
+pcaout$weights
+
+# PC scores
+pcaout$scores
+
+# Determine # of dimensions to keep: Velicer's MAP values (lower values are better) and other fit indices
+VSS(pcaout)
+
+# Cattell-Nelson-Gorsuch "objective" scree routine
+(CNG <- nCng(pcaout$values, details = T))
+
+
+#---------------------------------------------------------------------------#
+#  Machine Learning: Cluster Analysis (Hierarchical) (Unsupervised)        
+#---------------------------------------------------------------------------#
+
+#Extract categories of beer as clusters 
+head(beer)
+describe(beer[,2:5])
+
+# standardize
+beer.std <- beer
+beer.std[, 2:5] <- apply(beer.std[,2:5], 2, scale)
+
+# Euclidean distance
+(beer.dist <- dist(beer.std, method = "euclidean"))
+
+# hierarchical cluster analysis
+(beer.clust <- hclust((beer.dist)^2, method = "ave"))
+
+beer.clust$merge
+
+
+# n-1 heights values
+beer.clust$height
+
+# manually compute proportional increase
+(prop.height <- beer.clust$height[2:19]/beer.clust$height[1:18])
+
+schedule <- cbind(beer.clust$merge, beer.clust$height, c(NA,prop.height))
+colnames(schedule) <- c("cluster 1", "cluster 2", "height", "proportional increase")
+
+schedule
+
+plot(beer.clust, labels = beer$beer, main = 'Default from hclust')
+
+
+(beer.4 <- cutree(beer.clust,4))
+table(beer.4)
+
+# group membership
+sapply(unique(beer.4), function(g)beer$beer[beer.4 == g])
+
+# descriptive statistics for each cluster
+aggregate(beer[,2:5], by=list(beer.4), mean)
+aggregate(beer[,2:5], by=list(beer.4), sd)
+
+
+
